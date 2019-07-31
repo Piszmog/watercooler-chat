@@ -1,13 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/reiver/go-oi"
 	"github.com/reiver/go-telnet"
+	"log"
+	"os"
 	"strings"
 	"time"
 )
 
+var logger *log.Logger
 var clients = make(map[string]handler)
 
 type handler struct {
@@ -43,6 +47,7 @@ func (handler handler) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet
 				builder.WriteString(")")
 				builder.WriteByte('\n')
 				input := builder.String()
+				logger.Print(input)
 				for _, handler := range clients {
 					if id == handler.id {
 						continue
@@ -66,10 +71,25 @@ func (handler handler) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet
 }
 
 func main() {
+	const logFile = "log.txt"
+	const address = ":5555"
+	file, err := os.OpenFile(logFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("failed to open log file %s: %+v", logFile, err)
+	}
+	defer closeFile(file)
+	logger = log.New(file, "", 0)
 	var handler = handler{}
-	err := telnet.ListenAndServe(":5555", handler)
+	err = telnet.ListenAndServe(address, handler)
 	if nil != err {
-		//@TODO: Handle this error better.
-		panic(err)
+		closeFile(file)
+		log.Fatalf("failed to start server at address %s: %+v", address, err)
+	}
+}
+
+func closeFile(file *os.File) {
+	err := file.Close()
+	if err != nil {
+		fmt.Printf("failed to close file: %+v", err)
 	}
 }
