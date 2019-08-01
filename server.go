@@ -23,6 +23,9 @@ func (handler handler) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet
 	id := uuid.New().String()
 	handler.writer = w
 	handler.id = id
+	for _, handler := range clients {
+		oi.LongWriteString(handler.writer, "client "+id+" has entered\n")
+	}
 	clients[id] = handler
 	var buffer [1]byte
 	p := buffer[:]
@@ -65,6 +68,9 @@ func (handler handler) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet
 		}
 		if nil != err {
 			delete(clients, id)
+			for _, handler := range clients {
+				oi.LongWriteString(handler.writer, "client "+id+" has left\n")
+			}
 			break
 		}
 	}
