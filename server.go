@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/reiver/go-oi"
 	"github.com/reiver/go-telnet"
+	"io"
 	"log"
 	"os"
 	"path"
@@ -18,10 +19,11 @@ import (
 const (
 	defaultPort        = "5555"
 	defaultLogLocation = "log.txt"
+	defaultRoom        = "main"
 )
 
 var logger *log.Logger
-var clients = make(map[string]handler)
+var rooms = make(map[string]room)
 
 type configuration struct {
 	IPAddress   string `json:"ipAddress"`
@@ -29,65 +31,179 @@ type configuration struct {
 	LogLocation string `json:"logFileLocation"`
 }
 
-type handler struct {
+type room struct {
+	name  string
+	users map[string]user
+}
+
+type user struct {
 	id     string
+	name   string
 	writer telnet.Writer
 }
 
-func (handler handler) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet.Reader) {
+func (currentUser user) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet.Reader) {
+	//
+	// Setup recover to handle any unexpected errors
+	//
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Println("error occurred in ServeTELNET:", r)
+		}
+	}()
+	//
+	// Update attributes on the user
+	//
 	id := uuid.New().String()
-	handler.writer = w
-	handler.id = id
-	for _, handler := range clients {
-		oi.LongWriteString(handler.writer, "client "+id+" has entered\n")
-	}
-	clients[id] = handler
+	currentUser.writer = w
+	currentUser.id = id
+	//
+	// Prepare buffer, message builder, and timestamp for incoming messages
+	//
 	var buffer [1]byte
 	p := buffer[:]
-	builder := strings.Builder{}
-	builder.WriteString(id)
-	builder.WriteString(":")
-	builder.WriteString(" ")
-	isTimestampSet := false
+	messageBuilder := strings.Builder{}
+	//
+	// Determine the user's name and room
+	//
+	for len(currentUser.name) == 0 {
+		writeMessage(currentUser, "What is your name? ")
+		if getUserInput(r, p, &messageBuilder) {
+			return
+		}
+		currentUser.name = messageBuilder.String()
+		messageBuilder.Reset()
+		if len(currentUser.name) == 0 {
+			writeMessage(currentUser, "A user name is required.\n")
+		}
+	}
+	writeMessage(currentUser, "What room would you like to enter (default to main)? ")
+	if getUserInput(r, p, &messageBuilder) {
+		return
+	}
+	roomName := messageBuilder.String()
+	messageBuilder.Reset()
+	//
+	// Get room, or create a new room
+	//
+	if len(roomName) == 0 {
+		roomName = defaultRoom
+	}
+	selectedRoom := rooms[roomName]
+	if len(selectedRoom.name) == 0 {
+		rooms[roomName] = room{
+			name:  roomName,
+			users: make(map[string]user),
+		}
+	}
+	//
+	// Let the user know who else is in the room
+	//
+	users := selectedRoom.users
+	userList := make([]string, len(users))
+	for _, user := range users {
+		userList = append(userList, user.name)
+	}
+	writeMessage(currentUser, fmt.Sprintf("Users currently in the room:%s\n", strings.Join(userList, "\n")))
+	//
+	// Let the other users know a new user joins them
+	//
+	sendMessageToOtherUsers(fmt.Sprintf("client %s has entered", currentUser.id), selectedRoom.name, currentUser.id, users)
+	users[currentUser.id] = currentUser
+	//
+	// Start sending messages to the other users
+	//
+	handleUserMessages(r, p, messageBuilder, selectedRoom, currentUser, users)
+}
+
+func writeMessage(user user, message string) {
+	_, err := oi.LongWriteString(user.writer, message)
+	if err != nil {
+		//
+		// Something terrible happened
+		//
+		logger.Printf("ERROR: failed to send message %s to client %s: %+v\n", message, user.id, err)
+	}
+}
+
+func getUserInput(reader telnet.Reader, bytes []byte, messageBuilder *strings.Builder) bool {
 	for {
-		n, err := r.Read(p)
+		n, err := reader.Read(bytes)
 		if n > 0 {
-			if !isTimestampSet {
-				builder.WriteString("[")
-				builder.WriteString(time.Now().Format("15:04 MST"))
-				builder.WriteString("]")
-				builder.WriteString(" ")
-				isTimestampSet = true
-			}
-			bytes := p[:n]
+			bytes := bytes[:n]
 			if bytes[0] == '\n' {
 				continue
 			} else if bytes[0] == '\r' {
-				builder.WriteByte('\n')
-				input := builder.String()
-				logger.Print(input)
-				for _, handler := range clients {
-					if id == handler.id {
-						continue
-					}
-					oi.LongWriteString(handler.writer, input)
-				}
-				isTimestampSet = false
-				builder.Reset()
-				builder.WriteString(id)
-				builder.WriteString(":")
-				builder.WriteString(" ")
+				//
+				// Break from loop
+				//
+				break
 			} else {
-				builder.Write(bytes)
+				messageBuilder.Write(bytes)
 			}
 		}
-		if nil != err {
-			delete(clients, id)
-			for _, handler := range clients {
-				oi.LongWriteString(handler.writer, "client "+id+" has left\n")
+		//
+		// user disconnected
+		//
+		if err != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func handleUserMessages(reader telnet.Reader, bytes []byte, messageBuilder strings.Builder, selectedRoom room, currentUser user, users map[string]user) {
+	for {
+		n, err := reader.Read(bytes)
+		if n > 0 {
+			bytes := bytes[:n]
+			if bytes[0] == '\n' {
+				continue
+			} else if bytes[0] == '\r' {
+				//
+				// Send message to all other users
+				//
+				message := messageBuilder.String()
+				sendMessageToOtherUsers(message, selectedRoom.name, currentUser.id, users)
+				//
+				// Reset everything
+				//
+				messageBuilder.Reset()
+			} else {
+				messageBuilder.Write(bytes)
 			}
+		}
+		//
+		// handle error case - user left for some reason
+		//
+		if err != nil {
+			//
+			// remove user from map
+			//
+			delete(users, currentUser.id)
+			//
+			// Let other users know that this user left
+			//
+			sendMessageToOtherUsers(fmt.Sprintf("client %s has left", currentUser.id), selectedRoom.name, currentUser.id, users)
 			break
 		}
+	}
+}
+
+func sendMessageToOtherUsers(message, roomName, senderId string, users map[string]user) {
+	//
+	// Format the logs with the room and user
+	//
+	logger.Println(fmt.Sprintf("[%s %s] %s", senderId, roomName, message))
+	timestamp := time.Now().Format("15:04 MST")
+	for _, user := range users {
+		if senderId == user.id {
+			continue
+		}
+		//
+		// Format the final message with the user and timestamp
+		//
+		writeMessage(user, fmt.Sprintf("[%s %s]: %s\n", senderId, timestamp, message))
 	}
 }
 
@@ -121,24 +237,37 @@ func main() {
 		log.Fatalln(err)
 	}
 	defer closeFile(logFile)
-	logger = log.New(logFile, "", log.LstdFlags|log.LUTC)
+	//
+	// write to file and console -- TODO turn off console
+	//
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+	logger = log.New(multiWriter, "", log.LstdFlags|log.LUTC)
+	//
+	// Setup main room
+	//
+	mainRoom := room{
+		name:  defaultRoom,
+		users: make(map[string]user),
+	}
+	rooms[mainRoom.name] = mainRoom
 	//
 	// Start the TELNET server
 	//
-	var handler = handler{}
+	var handler = user{}
 	port := config.Port
 	if len(port) == 0 {
-		fmt.Printf("No port provided in the configuration file. Using default port '%s'\n", defaultPort)
+		logger.Printf("No port provided in the configuration file. Using default port '%s'\n", defaultPort)
 		port = defaultPort
 	}
-	fmt.Printf("Starting server on port '%s'...\n", port)
+	logger.Printf("Starting server on port '%s'...\n", port)
 	err = telnet.ListenAndServe(":"+port, handler)
 	if nil != err {
 		//
 		// Fatal will not execute defers, so to ensure we close the log file
 		//
+		logger.Printf("failed to start server at address %s: %+v\n", config.Port, err)
 		closeFile(logFile)
-		log.Fatalf("failed to start server at address %s: %+v\n", config.Port, err)
+		return
 	}
 }
 
@@ -158,6 +287,9 @@ func readConfigurationFile(configPath string) (configuration, error) {
 
 func getLogFile(config configuration) (*os.File, error) {
 	logLocation := config.LogLocation
+	//
+	// If no log file location is provided, use default location
+	//
 	if len(config.LogLocation) == 0 {
 		currentDirectory, err := os.Getwd()
 		if err != nil {
