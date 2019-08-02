@@ -61,7 +61,7 @@ func (currentUser user) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telne
 	currentUser.writer = w
 	currentUser.id = id
 	//
-	// Prepare buffer, message builder, and timestamp for incoming messages
+	// Prepare buffer and message builder
 	//
 	var buffer [1]byte
 	p := buffer[:]
@@ -117,7 +117,7 @@ func (currentUser user) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telne
 	//
 	// Let the other users know a new user joins them
 	//
-	sendMessageToOtherUsers(fmt.Sprintf("client %s has entered", currentUser.id), selectedRoom.name, currentUser, users)
+	sendMessageToOtherUsers(fmt.Sprintf("client %s has entered", currentUser.name), selectedRoom.name, currentUser, users)
 	addUser(currentUser, selectedRoom)
 	//
 	// Start sending messages to the other users
@@ -190,7 +190,7 @@ func sendMessageToOtherUsers(message, roomName string, senderUser user, users ma
 		//
 		// Format the final message with the user and timestamp
 		//
-		writeMessage(fmt.Sprintf("[%s %s]: %s\n", senderUser.id, timestamp, message), user)
+		writeMessage(fmt.Sprintf("[%s %s]: %s\n", senderUser.name, timestamp, message), user)
 	}
 }
 
@@ -233,7 +233,7 @@ func handleUserMessages(reader telnet.Reader, bytes []byte, messageBuilder strin
 			//
 			// Let other users know that this user left
 			//
-			sendMessageToOtherUsers(fmt.Sprintf("client %s has left", currentUser.id), selectedRoom.name, currentUser, users)
+			sendMessageToOtherUsers(fmt.Sprintf("client %s has left", currentUser.name), selectedRoom.name, currentUser, users)
 			break
 		}
 	}
