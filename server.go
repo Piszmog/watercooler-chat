@@ -48,21 +48,21 @@ func (handler handler) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet
 	builder.WriteString(id)
 	builder.WriteString(":")
 	builder.WriteString(" ")
-	var timestamp string
+	isTimestampSet := false
 	for {
 		n, err := r.Read(p)
 		if n > 0 {
-			if len(timestamp) == 0 {
-				timestamp = time.Now().Format("2006-01-02 15:04:05 MST")
+			if !isTimestampSet {
+				builder.WriteString("[")
+				builder.WriteString(time.Now().Format("15:04 MST"))
+				builder.WriteString("]")
+				builder.WriteString(" ")
+				isTimestampSet = true
 			}
 			bytes := p[:n]
 			if bytes[0] == '\n' {
 				continue
 			} else if bytes[0] == '\r' {
-				builder.WriteString(" ")
-				builder.WriteString("(")
-				builder.WriteString(timestamp)
-				builder.WriteString(")")
 				builder.WriteByte('\n')
 				input := builder.String()
 				logger.Print(input)
@@ -72,7 +72,7 @@ func (handler handler) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet
 					}
 					oi.LongWriteString(handler.writer, input)
 				}
-				timestamp = ""
+				isTimestampSet = false
 				builder.Reset()
 				builder.WriteString(id)
 				builder.WriteString(":")
@@ -98,7 +98,7 @@ func main() {
 	configPath := flag.String("c", "", "Configuration file used to configure the server")
 	flag.Parse()
 	//
-	// Validate flags
+	// Determine if using defaults
 	//
 	var config configuration
 	var err error
@@ -116,10 +116,12 @@ func main() {
 	//
 	// Setup log file
 	//
-	logger, err = setupLogger(config)
+	logFile, err := getLogFile(config)
 	if err != nil {
 		log.Fatalln(err)
 	}
+	defer closeFile(logFile)
+	logger = log.New(logFile, "", log.LstdFlags|log.LUTC)
 	//
 	// Start the TELNET server
 	//
@@ -132,6 +134,10 @@ func main() {
 	fmt.Printf("Starting server on port '%s'...\n", port)
 	err = telnet.ListenAndServe(":"+port, handler)
 	if nil != err {
+		//
+		// Fatal will not execute defers, so to ensure we close the log file
+		//
+		closeFile(logFile)
 		log.Fatalf("failed to start server at address %s: %+v\n", config.Port, err)
 	}
 }
@@ -150,7 +156,7 @@ func readConfigurationFile(configPath string) (configuration, error) {
 	return config, nil
 }
 
-func setupLogger(config configuration) (*log.Logger, error) {
+func getLogFile(config configuration) (*os.File, error) {
 	logLocation := config.LogLocation
 	if len(config.LogLocation) == 0 {
 		currentDirectory, err := os.Getwd()
@@ -164,8 +170,7 @@ func setupLogger(config configuration) (*log.Logger, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open log file %s", config.LogLocation)
 	}
-	defer closeFile(logFile)
-	return log.New(logFile, "", 0), nil
+	return logFile, nil
 }
 
 func closeFile(file *os.File) {
