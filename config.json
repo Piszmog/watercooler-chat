@@ -1,0 +1,5 @@
+{
+  "ipAddress": "localhost",
+  "port": "5555",
+  "logFileLocation": "log.txt"
+}

@@ -1,18 +1,33 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	"github.com/reiver/go-oi"
 	"github.com/reiver/go-telnet"
 	"log"
 	"os"
+	"path"
 	"strings"
 	"time"
 )
 
+const (
+	defaultPort        = "5555"
+	defaultLogLocation = "log.txt"
+)
+
 var logger *log.Logger
 var clients = make(map[string]handler)
+
+type configuration struct {
+	IPAddress   string `json:"ipAddress"`
+	Port        string `json:"port"`
+	LogLocation string `json:"logFileLocation"`
+}
 
 type handler struct {
 	id     string
@@ -77,20 +92,80 @@ func (handler handler) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet
 }
 
 func main() {
-	const logFile = "log.txt"
-	const address = ":5555"
-	file, err := os.OpenFile(logFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	//
+	// Setup flags
+	//
+	configPath := flag.String("c", "", "Configuration file used to configure the server")
+	flag.Parse()
+	//
+	// Validate flags
+	//
+	var config configuration
+	var err error
+	if len(*configPath) == 0 {
+		fmt.Println("No configuration file specified with flag '-c'. Using defaults.")
+	} else {
+		//
+		// Open and read the configuration file
+		//
+		config, err = readConfigurationFile(*configPath)
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+	//
+	// Setup log file
+	//
+	logger, err = setupLogger(config)
 	if err != nil {
-		log.Fatalf("failed to open log file %s: %+v", logFile, err)
+		log.Fatalln(err)
 	}
-	defer closeFile(file)
-	logger = log.New(file, "", 0)
+	//
+	// Start the TELNET server
+	//
 	var handler = handler{}
-	err = telnet.ListenAndServe(address, handler)
-	if nil != err {
-		closeFile(file)
-		log.Fatalf("failed to start server at address %s: %+v", address, err)
+	port := config.Port
+	if len(port) == 0 {
+		fmt.Printf("No port provided in the configuration file. Using default port '%s'\n", defaultPort)
+		port = defaultPort
 	}
+	fmt.Printf("Starting server on port '%s'...\n", port)
+	err = telnet.ListenAndServe(":"+port, handler)
+	if nil != err {
+		log.Fatalf("failed to start server at address %s: %+v\n", config.Port, err)
+	}
+}
+
+func readConfigurationFile(configPath string) (configuration, error) {
+	configFile, err := os.Open(configPath)
+	if err != nil {
+		return configuration{}, errors.Wrapf(err, "failed to open configuration file at location %s", configPath)
+	}
+	defer closeFile(configFile)
+	var config configuration
+	err = json.NewDecoder(configFile).Decode(&config)
+	if err != nil {
+		return config, errors.Wrapf(err, "failed to read the configuration file %s", configPath)
+	}
+	return config, nil
+}
+
+func setupLogger(config configuration) (*log.Logger, error) {
+	logLocation := config.LogLocation
+	if len(config.LogLocation) == 0 {
+		currentDirectory, err := os.Getwd()
+		if err != nil {
+			return nil, errors.Wrapf(err, "no log file location provided: could not get the current working directory for the default location")
+		}
+		fmt.Printf("No log file location provided in the configuration file. Using default log location '%s'\n", path.Join(currentDirectory, defaultLogLocation))
+		logLocation = defaultLogLocation
+	}
+	logFile, err := os.OpenFile(logLocation, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to open log file %s", config.LogLocation)
+	}
+	defer closeFile(logFile)
+	return log.New(logFile, "", 0), nil
 }
 
 func closeFile(file *os.File) {
