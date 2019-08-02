@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,6 +24,7 @@ const (
 )
 
 var logger *log.Logger
+var roomsMutex = sync.Mutex{}
 var rooms = make(map[string]room)
 
 type configuration struct {
@@ -33,6 +35,7 @@ type configuration struct {
 
 type room struct {
 	name  string
+	mutex sync.Mutex
 	users map[string]user
 }
 
@@ -67,17 +70,24 @@ func (currentUser user) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telne
 	// Determine the user's name and room
 	//
 	for len(currentUser.name) == 0 {
-		writeMessage(currentUser, "What is your name? ")
+		writeMessage("What is your name? ", currentUser)
 		if getUserInput(r, p, &messageBuilder) {
 			return
 		}
 		currentUser.name = messageBuilder.String()
 		messageBuilder.Reset()
 		if len(currentUser.name) == 0 {
-			writeMessage(currentUser, "A user name is required.\n")
+			writeMessage("A user name is required.\n", currentUser)
 		}
 	}
-	writeMessage(currentUser, "What room would you like to enter (default to main)? ")
+	roomList := make([]string, len(rooms))
+	index := 0
+	for _, exitingRoom := range rooms {
+		roomList[index] = exitingRoom.name
+		index++
+	}
+	writeMessage(fmt.Sprintf("Existing rooms:\n%s\n", strings.Join(roomList, "\n")), currentUser)
+	writeMessage("What room would you like to enter (if room is not listed, room will be created)? ", currentUser)
 	if getUserInput(r, p, &messageBuilder) {
 		return
 	}
@@ -91,32 +101,31 @@ func (currentUser user) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telne
 	}
 	selectedRoom := rooms[roomName]
 	if len(selectedRoom.name) == 0 {
-		rooms[roomName] = room{
-			name:  roomName,
-			users: make(map[string]user),
-		}
+		selectedRoom = createRoom(roomName)
 	}
 	//
 	// Let the user know who else is in the room
 	//
 	users := selectedRoom.users
 	userList := make([]string, len(users))
+	index = 0
 	for _, user := range users {
-		userList = append(userList, user.name)
+		userList[index] = user.name
+		index++
 	}
-	writeMessage(currentUser, fmt.Sprintf("Users currently in the room:%s\n", strings.Join(userList, "\n")))
+	writeMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(userList, "\n")), currentUser)
 	//
 	// Let the other users know a new user joins them
 	//
-	sendMessageToOtherUsers(fmt.Sprintf("client %s has entered", currentUser.id), selectedRoom.name, currentUser.id, users)
-	users[currentUser.id] = currentUser
+	sendMessageToOtherUsers(fmt.Sprintf("client %s has entered", currentUser.id), selectedRoom.name, currentUser, users)
+	addUser(currentUser, selectedRoom)
 	//
 	// Start sending messages to the other users
 	//
 	handleUserMessages(r, p, messageBuilder, selectedRoom, currentUser, users)
 }
 
-func writeMessage(user user, message string) {
+func writeMessage(message string, user user) {
 	_, err := oi.LongWriteString(user.writer, message)
 	if err != nil {
 		//
@@ -152,6 +161,46 @@ func getUserInput(reader telnet.Reader, bytes []byte, messageBuilder *strings.Bu
 	return false
 }
 
+func createRoom(roomName string) room {
+	//
+	// To ensure concurrency safety, lock writes to the room map
+	//
+	roomsMutex.Lock()
+	createdRoom := room{
+		name:  roomName,
+		users: make(map[string]user),
+		mutex: sync.Mutex{},
+	}
+	rooms[roomName] = createdRoom
+	logger.Printf("Room %s has been created\n", roomName)
+	roomsMutex.Unlock()
+	return createdRoom
+}
+
+func sendMessageToOtherUsers(message, roomName string, senderUser user, users map[string]user) {
+	//
+	// Format the logs with the room and user
+	//
+	logger.Println(fmt.Sprintf("[%s %s %s] %s", senderUser.id, senderUser.name, roomName, message))
+	timestamp := time.Now().Format("15:04 MST")
+	for _, user := range users {
+		if senderUser.id == user.id {
+			continue
+		}
+		//
+		// Format the final message with the user and timestamp
+		//
+		writeMessage(fmt.Sprintf("[%s %s]: %s\n", senderUser.id, timestamp, message), user)
+	}
+}
+
+func addUser(currentUser user, room room) {
+	room.mutex.Lock()
+	room.users[currentUser.id] = currentUser
+	logger.Printf("User %s %s entered the room %s\n", currentUser.id, currentUser.name, room.name)
+	room.mutex.Unlock()
+}
+
 func handleUserMessages(reader telnet.Reader, bytes []byte, messageBuilder strings.Builder, selectedRoom room, currentUser user, users map[string]user) {
 	for {
 		n, err := reader.Read(bytes)
@@ -164,7 +213,7 @@ func handleUserMessages(reader telnet.Reader, bytes []byte, messageBuilder strin
 				// Send message to all other users
 				//
 				message := messageBuilder.String()
-				sendMessageToOtherUsers(message, selectedRoom.name, currentUser.id, users)
+				sendMessageToOtherUsers(message, selectedRoom.name, currentUser, users)
 				//
 				// Reset everything
 				//
@@ -178,33 +227,23 @@ func handleUserMessages(reader telnet.Reader, bytes []byte, messageBuilder strin
 		//
 		if err != nil {
 			//
-			// remove user from map
+			// remove user from room
 			//
-			delete(users, currentUser.id)
+			removeUser(currentUser, selectedRoom)
 			//
 			// Let other users know that this user left
 			//
-			sendMessageToOtherUsers(fmt.Sprintf("client %s has left", currentUser.id), selectedRoom.name, currentUser.id, users)
+			sendMessageToOtherUsers(fmt.Sprintf("client %s has left", currentUser.id), selectedRoom.name, currentUser, users)
 			break
 		}
 	}
 }
 
-func sendMessageToOtherUsers(message, roomName, senderId string, users map[string]user) {
-	//
-	// Format the logs with the room and user
-	//
-	logger.Println(fmt.Sprintf("[%s %s] %s", senderId, roomName, message))
-	timestamp := time.Now().Format("15:04 MST")
-	for _, user := range users {
-		if senderId == user.id {
-			continue
-		}
-		//
-		// Format the final message with the user and timestamp
-		//
-		writeMessage(user, fmt.Sprintf("[%s %s]: %s\n", senderId, timestamp, message))
-	}
+func removeUser(currentUser user, room room) {
+	room.mutex.Lock()
+	delete(room.users, currentUser.id)
+	logger.Printf("User %s %s left the room %s\n", currentUser.id, currentUser.name, room.name)
+	room.mutex.Unlock()
 }
 
 func main() {
@@ -248,8 +287,13 @@ func main() {
 	mainRoom := room{
 		name:  defaultRoom,
 		users: make(map[string]user),
+		mutex: sync.Mutex{},
 	}
 	rooms[mainRoom.name] = mainRoom
+	//
+	// Do not let stale rooms float around. Clean them up after a certain amount of time
+	//
+	go cleanupEmptyRooms()
 	//
 	// Start the TELNET server
 	//
@@ -268,6 +312,23 @@ func main() {
 		logger.Printf("failed to start server at address %s: %+v\n", config.Port, err)
 		closeFile(logFile)
 		return
+	}
+}
+
+func cleanupEmptyRooms() {
+	for {
+		time.Sleep(15 * time.Second)
+		for id, room := range rooms {
+			if id == defaultRoom {
+				continue
+			}
+			room.mutex.Lock()
+			if len(room.users) == 0 {
+				delete(rooms, id)
+				logger.Printf("Removed empty room %s\n", id)
+			}
+			room.mutex.Unlock()
+		}
 	}
 }
 
