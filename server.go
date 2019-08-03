@@ -147,11 +147,6 @@ func main() {
 	// Setup chat server
 	//
 	server.createRoom(defaultRoom)
-	////
-	//// Do not let stale rooms float around. Clean them up after a certain amount of time
-	////
-	//go cleanupEmptyRooms() -- TODO - instead when a user leaves a room, check if empty
-	//
 	// Start the TELNET server
 	//
 	var userHandler = chatUser{}
