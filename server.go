@@ -128,13 +128,7 @@ func selectName(currentUser *user, r telnet.Reader, p []byte, messageBuilder str
 }
 
 func selectRoom(currentUser user, reader telnet.Reader, bytes []byte, messageBuilder strings.Builder) room {
-	roomList := make([]string, len(rooms))
-	index := 0
-	for _, exitingRoom := range rooms {
-		roomList[index] = exitingRoom.name
-		index++
-	}
-	writeMessage(fmt.Sprintf("Existing rooms:\n%s\n", strings.Join(roomList, "\n")), currentUser)
+	listExistingRooms(currentUser)
 	writeMessage("What room would you like to enter (if room is not listed, room will be created)? ", currentUser)
 	if getUserInput(reader, bytes, &messageBuilder) {
 		return room{}
@@ -152,6 +146,16 @@ func selectRoom(currentUser user, reader telnet.Reader, bytes []byte, messageBui
 		selectedRoom = createRoom(roomName)
 	}
 	return selectedRoom
+}
+
+func listExistingRooms(currentUser user) {
+	roomList := make([]string, len(rooms))
+	index := 0
+	for _, exitingRoom := range rooms {
+		roomList[index] = exitingRoom.name
+		index++
+	}
+	writeMessage(fmt.Sprintf("Existing rooms:\n%s\n", strings.Join(roomList, "\n")), currentUser)
 }
 
 func writeMessage(message string, user user) {
@@ -242,7 +246,24 @@ func handleUserMessages(reader telnet.Reader, bytes []byte, messageBuilder strin
 				// Send message to all other users
 				//
 				message := messageBuilder.String()
-				sendMessageToOtherUsers(message, selectedRoom.name, currentUser, users)
+				//
+				// Check if message is a command
+				//
+				if strings.HasPrefix(message, "-r") {
+				} else if strings.HasPrefix("-b", "") {
+				} else if strings.HasPrefix("-u", "") {
+				} else if message == "-lr" {
+					listExistingRooms(currentUser)
+				} else if message == "-lu" {
+					listUsersInRoom(selectedRoom, currentUser)
+				} else if message == "-lb" {
+				} else if message == "-h" || message == "-help" {
+				} else {
+					//
+					// if not a command, send message to other users
+					//
+					sendMessageToOtherUsers(message, selectedRoom.name, currentUser, users)
+				}
 				//
 				// Reset everything
 				//
