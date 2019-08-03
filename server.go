@@ -54,6 +54,16 @@ func (server *chatServer) createRoom(roomName string) *chatRoom {
 	return server.rooms[roomName]
 }
 
+func (server *chatServer) removeRoom(roomName string) {
+	//
+	// To ensure concurrency safety, lock writes to the chatRoom map
+	//
+	server.roomsLock.Lock()
+	delete(server.rooms, roomName)
+	server.roomsLock.Unlock()
+	logger.Printf("Room %s is empty. Room has been removed\n", roomName)
+}
+
 func (server *chatServer) listRooms() []string {
 	server.roomsLock.RLock()
 	roomList := make([]string, len(server.rooms))
@@ -144,14 +154,14 @@ func main() {
 	//
 	// Start the TELNET server
 	//
-	var handler = chatUser{}
+	var userHandler = chatUser{}
 	port := config.Port
 	if len(port) == 0 {
 		logger.Printf("No port provided in the configuration file. Using default port '%s'\n", defaultPort)
 		port = defaultPort
 	}
 	logger.Printf("Starting server on port '%s'...\n", port)
-	err = telnet.ListenAndServe(":"+port, handler)
+	err = telnet.ListenAndServe(":"+port, userHandler)
 	if nil != err {
 		//
 		// Fatal will not execute defers, so to ensure we close the log file

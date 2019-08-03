@@ -61,12 +61,12 @@ func (user chatUser) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet.R
 	//
 	// Let the chatUser know who else is in the chatRoom
 	//
-	users := room.listUsers()
-	user.writeMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(users, "\n")))
+	users := room.getUsers()
+	user.receiveMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(users, "\n")))
 	//
 	// Let chatUser know of commands they can use
 	//
-	user.writeMessage(messageCommands)
+	user.receiveMessage(messageCommands)
 	//
 	// Let the other users know a new chatUser joins them
 	//
@@ -75,7 +75,7 @@ func (user chatUser) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet.R
 	//
 	// Start sending messages to the other users
 	//
-	user.writeMessage(fmt.Sprintf(messageWelcome, room.name))
+	user.receiveMessage(fmt.Sprintf(messageWelcome, room.name))
 	user.handleMessage(room)
 	//
 	// user has left the server
@@ -85,12 +85,12 @@ func (user chatUser) ServeTELNET(ctx telnet.Context, w telnet.Writer, r telnet.R
 
 func (user *chatUser) selectName() {
 	for len(user.name) == 0 {
-		user.writeMessage("What is your name? ")
+		user.receiveMessage("What is your name? ")
 		userName := user.getInput()
 		if len(userName) == 0 {
-			user.writeMessage("A name is required.\n")
+			user.receiveMessage("A name is required.\n")
 		} else if server.userExists(userName) {
-			user.writeMessage(fmt.Sprintf("The name %s already exists on the server. Choose a different name.\n", userName))
+			user.receiveMessage(fmt.Sprintf("The name %s already exists on the server. Choose a different name.\n", userName))
 		} else {
 			user.name = userName
 		}
@@ -100,8 +100,8 @@ func (user *chatUser) selectName() {
 
 func (user chatUser) selectRoom() *chatRoom {
 	currentRooms := server.listRooms()
-	user.writeMessage(fmt.Sprintf("Existing rooms:\n%s\n", strings.Join(currentRooms, "\n")))
-	user.writeMessage("What room would you like to enter (if room is not listed, room will be created)? ")
+	user.receiveMessage(fmt.Sprintf("Existing rooms:\n%s\n", strings.Join(currentRooms, "\n")))
+	user.receiveMessage("What room would you like to enter (if room is not listed, room will be created)? ")
 	roomName := user.getInput()
 	//
 	// Get chatRoom, or create a new chatRoom
@@ -116,7 +116,7 @@ func (user chatUser) selectRoom() *chatRoom {
 	return selectedRoom
 }
 
-func (user chatUser) writeMessage(message string) {
+func (user chatUser) receiveMessage(message string) {
 	_, err := oi.LongWriteString(user.writer, message)
 	if err != nil {
 		//
@@ -172,21 +172,21 @@ func (user chatUser) handleMessage(room *chatRoom) {
 				} else if strings.HasPrefix(message, "-b") {
 					userName := strings.Replace(message, "-b ", "", 1)
 					user.block(userName)
-					user.writeMessage(fmt.Sprintf("You have blocked %s\n", userName))
+					user.receiveMessage(fmt.Sprintf("You have blocked %s\n", userName))
 				} else if strings.HasPrefix(message, "-u") {
 					userName := strings.Replace(message, "-u ", "", 1)
 					user.unblock(userName)
-					user.writeMessage(fmt.Sprintf("You have unblocked %s\n", userName))
+					user.receiveMessage(fmt.Sprintf("You have unblocked %s\n", userName))
 				} else if message == "-lr" {
 					currentRooms := server.listRooms()
-					user.writeMessage(fmt.Sprintf("Existing rooms:\n%s\n", strings.Join(currentRooms, "\n")))
+					user.receiveMessage(fmt.Sprintf("Existing rooms:\n%s\n", strings.Join(currentRooms, "\n")))
 				} else if message == "-lu" {
-					users := room.listUsers()
-					user.writeMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(users, "\n")))
+					users := room.getUsers()
+					user.receiveMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(users, "\n")))
 				} else if message == "-lb" {
-					//todo
+					user.receiveMessage(strings.Join(user.getBlocked(), "\n") + "\n")
 				} else if message == "-h" || message == "-help" {
-					user.writeMessage(messageCommands)
+					user.receiveMessage(messageCommands)
 				} else {
 					//
 					// if not a command, send message to other users
@@ -213,9 +213,16 @@ func (user chatUser) leave(room *chatRoom) {
 	//
 	room.removeUser(user)
 	//
-	// Let other users know that this chatUser left
+	// if no one is in the room, remove the room
 	//
-	user.sendMessage(fmt.Sprintf("%s has left", user.name), room)
+	if len(room.getUsers()) == 0 && room.name != defaultRoom {
+		server.removeRoom(room.name)
+	} else {
+		//
+		// Let other users know that this chatUser left
+		//
+		user.sendMessage(fmt.Sprintf("%s has left", user.name), room)
+	}
 }
 
 func (user chatUser) sendMessage(message string, room *chatRoom) {
@@ -233,7 +240,7 @@ func (user chatUser) sendMessage(message string, room *chatRoom) {
 		//
 		// Format the final message with the chatUser and timestamp
 		//
-		otherUser.writeMessage(fmt.Sprintf("[%s %s]: %s\n", user.name, timestamp, message))
+		otherUser.receiveMessage(fmt.Sprintf("[%s %s]: %s\n", user.name, timestamp, message))
 	}
 }
 
@@ -247,6 +254,18 @@ func (user *chatUser) unblock(userName string) {
 	user.Lock()
 	user.blockedUsers[userName] = false
 	user.Unlock()
+}
+
+func (user *chatUser) getBlocked() []string {
+	user.RLock()
+	var blockedUsers []string
+	for name, isBlocked := range user.blockedUsers {
+		if isBlocked {
+			blockedUsers = append(blockedUsers, name)
+		}
+	}
+	user.RUnlock()
+	return blockedUsers
 }
 
 func (user *chatUser) isBlocked(userName string) bool {
