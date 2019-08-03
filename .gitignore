@@ -18,6 +18,6 @@
 *.iws
 *.ipr
 
-/vendor
+vendor/
 
 log.txt

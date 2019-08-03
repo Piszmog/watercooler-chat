@@ -64,6 +64,16 @@ func (server *chatServer) removeRoom(roomName string) {
 	logger.Printf("Room %s is empty. Room has been removed\n", roomName)
 }
 
+func (server *chatServer) getRoom(roomName string) *chatRoom {
+	server.roomsLock.RLock()
+	selectedRoom := server.rooms[roomName]
+	server.roomsLock.RUnlock()
+	if selectedRoom == nil {
+		selectedRoom = server.createRoom(roomName)
+	}
+	return selectedRoom
+}
+
 func (server *chatServer) listRooms() []string {
 	server.roomsLock.RLock()
 	roomList := make([]string, len(server.rooms))

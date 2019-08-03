@@ -18,6 +18,7 @@ const (
 		"-lr             -- to list all existing rooms\n" +
 		"-lu             -- to list all users in the current room\n" +
 		"-lb             -- to list all users currently blocked\n" +
+		"-q              -- to quit the chat\n" +
 		"-h              -- to list all available commands\n\n"
 	timestampFormat = "15:04 MST"
 )
@@ -109,11 +110,7 @@ func (user chatUser) selectRoom() *chatRoom {
 	if len(roomName) == 0 {
 		roomName = defaultRoom
 	}
-	selectedRoom := server.rooms[roomName]
-	if selectedRoom == nil {
-		selectedRoom = server.createRoom(roomName)
-	}
-	return selectedRoom
+	return server.getRoom(roomName)
 }
 
 func (user chatUser) receiveMessage(message string) {
@@ -153,6 +150,7 @@ func (user chatUser) getInput() string {
 }
 
 func (user chatUser) handleMessage(room *chatRoom) {
+	selectedRoom := room
 	for {
 		n, err := user.reader.Read(user.buffer.bufferBytes)
 		if n > 0 {
@@ -168,7 +166,14 @@ func (user chatUser) handleMessage(room *chatRoom) {
 				// Check if message is a command
 				//
 				if strings.HasPrefix(message, "-r") {
-					// todo
+					user.leave(selectedRoom)
+					newRoom := strings.Replace(message, "-r ", "", 1)
+					user.receiveMessage("Changed rooms...\n")
+					selectedRoom = server.getRoom(newRoom)
+					users := selectedRoom.getUsers()
+					user.receiveMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(users, "\n")))
+					selectedRoom.addUser(user)
+					user.sendMessage(fmt.Sprintf("%s has entered", user.name), room)
 				} else if strings.HasPrefix(message, "-b") {
 					userName := strings.Replace(message, "-b ", "", 1)
 					user.block(userName)
@@ -181,17 +186,20 @@ func (user chatUser) handleMessage(room *chatRoom) {
 					currentRooms := server.listRooms()
 					user.receiveMessage(fmt.Sprintf("Existing rooms:\n%s\n", strings.Join(currentRooms, "\n")))
 				} else if message == "-lu" {
-					users := room.getUsers()
+					users := selectedRoom.getUsers()
 					user.receiveMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(users, "\n")))
 				} else if message == "-lb" {
 					user.receiveMessage(strings.Join(user.getBlocked(), "\n") + "\n")
+				} else if message == "-q" {
+					user.receiveMessage("Quiting...\n")
+					break
 				} else if message == "-h" || message == "-help" {
 					user.receiveMessage(messageCommands)
 				} else {
 					//
 					// if not a command, send message to other users
 					//
-					user.sendMessage(message, room)
+					user.sendMessage(message, selectedRoom)
 				}
 			} else {
 				user.buffer.writeByte(b)
@@ -204,7 +212,7 @@ func (user chatUser) handleMessage(room *chatRoom) {
 			break
 		}
 	}
-	user.leave(room)
+	user.leave(selectedRoom)
 }
 
 func (user chatUser) leave(room *chatRoom) {
