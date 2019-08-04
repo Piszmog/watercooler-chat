@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -12,6 +13,9 @@ type chatRoom struct {
 
 func (room *chatRoom) getUsers() []string {
 	room.RLock()
+	//
+	// Get the current user names
+	//
 	users := room.users
 	userList := make([]string, len(users))
 	index := 0
@@ -23,11 +27,18 @@ func (room *chatRoom) getUsers() []string {
 	return userList
 }
 
-func (room *chatRoom) addUser(currentUser chatUser) {
+func (room *chatRoom) addUser(user chatUser) {
+	//
+	// Update the room
+	//
 	room.Lock()
-	room.users[currentUser.name] = currentUser
+	room.users[user.name] = user
 	room.Unlock()
-	logger.Printf("%s entered the room %s\n", currentUser.name, room.name)
+	logger.Printf("%s entered the room %s\n", user.name, room.name)
+	//
+	// Notify others that a new user has joined
+	//
+	room.broadcast(fmt.Sprintf("%s has entered", user.name))
 }
 
 func (room *chatRoom) removeUser(currentUser chatUser) {
@@ -43,7 +54,7 @@ func (room *chatRoom) removeUser(currentUser chatUser) {
 func (room *chatRoom) broadcast(message string) {
 	room.RLock()
 	for _, user := range room.users {
-		user.sendMessage(message, room)
+		user.receiveMessage(message)
 	}
 	room.RUnlock()
 }

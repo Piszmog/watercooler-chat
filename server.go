@@ -4,17 +4,22 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/reiver/go-telnet"
 	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"path"
 	"sync"
+	"time"
 )
 
 const (
-	defaultPort        = "5555"
+	defaultTelnetPort  = "5555"
+	defaultHTTPPort    = "8080"
 	defaultLogLocation = "log.txt"
 	defaultRoom        = "main"
 )
@@ -29,7 +34,8 @@ var server = chatServer{
 
 type configuration struct {
 	IPAddress   string `json:"ipAddress"`
-	Port        string `json:"port"`
+	TelnetPort  string `json:"telnetPort"`
+	HTTPPort    string `json:"httpPort"`
 	LogLocation string `json:"logFileLocation"`
 }
 
@@ -40,14 +46,19 @@ type chatServer struct {
 	usersLock sync.RWMutex
 }
 
-func (server *chatServer) createRoom(roomName string) *chatRoom {
+func (server *chatServer) createRoomIfMissing(roomName string) *chatRoom {
 	//
-	// To ensure concurrency safety, lock writes to the chatRoom map
+	// To ensure concurrency safety, use lock
 	//
 	server.roomsLock.Lock()
-	server.rooms[roomName] = &chatRoom{
-		name:  roomName,
-		users: make(map[string]chatUser),
+	//
+	// Check if room exists - another goroutine could have created it
+	//
+	if server.rooms[roomName] == nil {
+		server.rooms[roomName] = &chatRoom{
+			name:  roomName,
+			users: make(map[string]chatUser),
+		}
 	}
 	server.roomsLock.Unlock()
 	logger.Printf("Room %s has been created\n", roomName)
@@ -68,9 +79,7 @@ func (server *chatServer) getRoom(roomName string) *chatRoom {
 	server.roomsLock.RLock()
 	selectedRoom := server.rooms[roomName]
 	server.roomsLock.RUnlock()
-	if selectedRoom == nil {
-		selectedRoom = server.createRoom(roomName)
-	}
+	selectedRoom = server.createRoomIfMissing(roomName)
 	return selectedRoom
 }
 
@@ -156,25 +165,18 @@ func main() {
 	//
 	// Setup chat server
 	//
-	server.createRoom(defaultRoom)
+	server.createRoomIfMissing(defaultRoom)
+	done := make(chan bool)
+	//
 	// Start the TELNET server
 	//
-	var userHandler = chatUser{}
-	port := config.Port
-	if len(port) == 0 {
-		logger.Printf("No port provided in the configuration file. Using default port '%s'\n", defaultPort)
-		port = defaultPort
-	}
-	logger.Printf("Starting server on port '%s'...\n", port)
-	err = telnet.ListenAndServe(":"+port, userHandler)
-	if nil != err {
-		//
-		// Fatal will not execute defers, so to ensure we close the log file
-		//
-		logger.Printf("failed to start server at address %s: %+v\n", config.Port, err)
-		closeFile(logFile)
-		return
-	}
+	go startTelnetServer(config, done)
+	//
+	// Start the HTTP server
+	//
+	go startHTTPServer(config, done)
+	<-done
+	logger.Println("Stopping server...")
 }
 
 func readConfigurationFile(configPath string) (configuration, error) {
@@ -216,4 +218,80 @@ func closeFile(file *os.File) {
 	if err != nil {
 		fmt.Printf("failed to close file: %+v", err)
 	}
+}
+
+func startTelnetServer(config configuration, done chan bool) {
+	var userHandler = chatUser{}
+	port := config.TelnetPort
+	if len(port) == 0 {
+		logger.Printf("No Telnet port provided in the configuration file. Using default Telnet port '%s'\n", defaultTelnetPort)
+		port = defaultTelnetPort
+	}
+	logger.Printf("Starting Telnet server on port '%s'...\n", port)
+	err := telnet.ListenAndServe(":"+port, userHandler)
+	if nil != err {
+		//
+		// Fatal will not execute defers, so to ensure we close the log file
+		//
+		logger.Printf("failed to start Telnet server at address %s: %+v\n", config.TelnetPort, err)
+	}
+	done <- true
+}
+
+func startHTTPServer(config configuration, done chan bool) {
+	port := config.TelnetPort
+	if len(port) == 0 {
+		logger.Printf("No HTTP port provided in the configuration file. Using default HTTP port '%s'\n", defaultHTTPPort)
+		port = defaultHTTPPort
+	}
+	logger.Printf("Starting HTTP server on port '%s'...\n", port)
+	r := mux.NewRouter()
+	r.HandleFunc("/rooms/{name}", func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodGet {
+			//
+			// Query messages from a room
+			//
+			fmt.Fprintln(writer, "Hello there... this is not implemented yet...")
+		} else {
+			//
+			// Send messages to a room
+			//
+			sendMessage(writer, request)
+		}
+	}).Methods(http.MethodGet, http.MethodPost)
+	srv := &http.Server{
+		Addr:         "0.0.0.0:" + port,
+		WriteTimeout: time.Second * 15,
+		ReadTimeout:  time.Second * 15,
+		IdleTimeout:  time.Second * 60,
+		Handler:      r,
+	}
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Printf("failed to start HTTP server at addredd %s: %+v\n", port, err)
+	}
+	done <- true
+}
+
+func sendMessage(writer http.ResponseWriter, request *http.Request) {
+	variables := mux.Vars(request)
+	roomName := variables["name"]
+	if len(roomName) == 0 {
+		// TODO
+	}
+	senderName := request.Header.Get("Sender-Name")
+	if len(senderName) == 0 {
+		// TODO
+	}
+	if request.ContentLength > 500 {
+		// TODO
+	}
+	room := server.getRoom(roomName)
+	body := request.Body
+	bytes, err := ioutil.ReadAll(body)
+	if err != nil {
+		// TODO
+	}
+	// todo log
+	room.broadcast(senderName + " " + string(bytes))
+	// todo format and with timestamp
 }
