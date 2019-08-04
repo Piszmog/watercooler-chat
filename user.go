@@ -173,7 +173,7 @@ func (user chatUser) handleMessage(room *chatRoom) {
 					users := selectedRoom.getUsers()
 					user.receiveMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(users, "\n")))
 					selectedRoom.addUser(user)
-					user.sendMessage(fmt.Sprintf("%s has entered", user.name), room)
+					user.sendMessage(fmt.Sprintf("%s has entered", user.name), selectedRoom)
 				} else if strings.HasPrefix(message, "-b") {
 					userName := strings.Replace(message, "-b ", "", 1)
 					user.block(userName)
