@@ -104,7 +104,7 @@ func (user *chatUser) selectName() {
 	//
 	// Update the server with the new user
 	//
-	server.addUser(*user) // todo multiple users with same name can get here
+	server.addUser(*user) // todo multiple users with same name can get here if performed at the same exact time
 }
 
 func (user chatUser) selectRoom() *chatRoom {
@@ -185,27 +185,24 @@ func (user chatUser) handleMessages(room *chatRoom) {
 				//
 				// Check if message is a command
 				//
-				if strings.HasPrefix(message, "-r") {
+				if strings.HasPrefix(message, "-r") { // change rooms
 					selectedRoom = user.changeRoom(selectedRoom, message)
-				} else if strings.HasPrefix(message, "-b") {
+				} else if strings.HasPrefix(message, "-b") { // block a user
 					user.blockUser(message)
-				} else if strings.HasPrefix(message, "-u") {
+				} else if strings.HasPrefix(message, "-u") { // unblock as user
 					user.unblockUser(message)
-				} else if message == "-lr" {
+				} else if message == "-lr" { // list existing rooms
 					user.receiveMessage(fmt.Sprintf("Existing rooms:\n%s", strings.Join(server.listRooms(), "\n")))
-				} else if message == "-lu" {
+				} else if message == "-lu" { // list users in the current room
 					user.receiveMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(selectedRoom.getUsers(), "\n")))
-				} else if message == "-lb" {
+				} else if message == "-lb" { // list blocked users
 					user.receiveMessage(strings.Join(user.getBlocked(), "\n"))
-				} else if message == "-q" {
+				} else if message == "-q" { // quit the server
 					user.receiveMessage("Quiting...")
 					break
-				} else if message == "-h" || message == "-help" {
+				} else if message == "-h" || message == "-help" { // print commands
 					user.receiveMessage(messageCommands)
-				} else {
-					//
-					// if not a command, send message to other users
-					//
+				} else { // send message to other users in the room
 					user.sendMessage(message, selectedRoom)
 				}
 			} else {
