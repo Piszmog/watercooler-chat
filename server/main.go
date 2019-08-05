@@ -8,7 +8,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/reiver/go-telnet"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -157,6 +156,14 @@ func startHTTPServer(config configuration, done chan bool) {
 		port = defaultHTTPPort
 	}
 	logger.Printf("Starting HTTP server on port '%s'...\n", port)
+	srv := createHTTPServer(port)
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Printf("failed to start HTTP server at addredd %s: %+v\n", port, err)
+	}
+	done <- true
+}
+
+func createHTTPServer(port string) *http.Server {
 	r := mux.NewRouter()
 	r.HandleFunc("/rooms/{name}", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method == http.MethodGet {
@@ -168,7 +175,7 @@ func startHTTPServer(config configuration, done chan bool) {
 			//
 			// Send messages to a room
 			//
-			sendMessage(writer, request)
+			sendHTTPMessage(writer, request)
 		}
 	}).Methods(http.MethodGet, http.MethodPost)
 	srv := &http.Server{
@@ -178,32 +185,63 @@ func startHTTPServer(config configuration, done chan bool) {
 		IdleTimeout:  time.Second * 60,
 		Handler:      r,
 	}
-	if err := srv.ListenAndServe(); err != nil {
-		logger.Printf("failed to start HTTP server at addredd %s: %+v\n", port, err)
-	}
-	done <- true
+	return srv
 }
 
-func sendMessage(writer http.ResponseWriter, request *http.Request) {
+func sendHTTPMessage(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Add("Content-Type", "application/json")
 	variables := mux.Vars(request)
 	roomName := variables["name"]
 	if len(roomName) == 0 {
-		// TODO
+		writer.WriteHeader(http.StatusBadRequest)
+		logger.Println("ERROR: HTTP POST request missing room name")
+		writeHttpMessage(writer, `{"statusCode":"400", "reason":"Room name cannot be blank"}`)
+		return
 	}
 	senderName := request.Header.Get("Sender-Name")
 	if len(senderName) == 0 {
-		// TODO
+		writer.WriteHeader(http.StatusBadRequest)
+		logger.Println("ERROR: HTTP POST request missing 'Sender-Name'")
+		writeHttpMessage(writer, `{"statusCode":"400", "reason":"Missing Header 'Sender-Name'"}`)
+		return
 	}
-	if request.ContentLength > 500 {
-		// TODO
+	logger.Println("Received HTTP request to send a message from user " + senderName)
+	user := chatUser{
+		name: senderName,
 	}
 	room := server.getRoom(roomName)
 	body := request.Body
-	bytes, err := ioutil.ReadAll(body)
+	defer closeBody(body)
+	buf := make([]byte, 500)
+	_, err := body.Read(buf)
 	if err != nil {
-		// TODO
+		writer.WriteHeader(http.StatusInternalServerError)
+		logger.Printf("ERROR: failed to handle HTTP POST request: %+v\n", err)
+		writeHttpMessage(writer, `{"statusCode":"500", "reason":"Failed to handle request"}`)
+		return
 	}
-	// todo log
-	room.broadcast(senderName + " " + string(bytes))
-	// todo format and with timestamp
+	user.sendMessage(string(buf), room)
+	if request.ContentLength > 500 {
+		writer.WriteHeader(http.StatusOK)
+		logger.Println("WARN: HTTP POST request body greater than 500 bytes. Truncating message")
+		writeHttpMessage(writer, `{"statusCode":"200", "reason":"Message successfully sent, but was truncated for being larger than 500 characters."}`)
+	} else {
+		writer.WriteHeader(http.StatusOK)
+		writeHttpMessage(writer, `{"statusCode":"200", "reason":"Message successfully sent."}`)
+	}
+	logger.Println("Sent HTTP message to room " + roomName + " from user " + senderName)
+}
+
+func writeHttpMessage(writer http.ResponseWriter, message string) {
+	_, err := writer.Write([]byte(message))
+	if err != nil {
+		logger.Printf("ERROR: failed to send message to HTTP client: %+v\n", err)
+	}
+}
+
+func closeBody(reader io.ReadCloser) {
+	err := reader.Close()
+	if err != nil {
+		logger.Printf("ERROR: failed to close HTTP body: %+v\n", err)
+	}
 }

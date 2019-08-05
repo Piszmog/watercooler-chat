@@ -22,9 +22,9 @@ func (server *chatServer) createRoomIfMissing(roomName string) *chatRoom {
 			name:  roomName,
 			users: make(map[string]chatUser),
 		}
+		logger.Printf("Room %s has been created\n", roomName)
 	}
 	server.roomsLock.Unlock()
-	logger.Printf("Room %s has been created\n", roomName)
 	return server.rooms[roomName]
 }
 
@@ -65,6 +65,16 @@ func (server *chatServer) addUser(user chatUser) {
 	server.usersLock.Lock()
 	server.users[user.name] = user
 	server.usersLock.Unlock()
+}
+
+func (server *chatServer) getUser(userName string) chatUser {
+	//
+	// Ensure concurrency safety
+	//
+	server.usersLock.RLock()
+	user := server.users[userName]
+	server.usersLock.RUnlock()
+	return user
 }
 
 func (server *chatServer) removeUser(user chatUser) {
