@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	defaultTelnetPort  = "5555"
-	defaultHTTPPort    = "8080"
-	defaultLogLocation = "log.txt"
-	defaultRoom        = "main"
+	defaultTelnetPort    = "5555"
+	defaultHTTPPort      = "8080"
+	defaultLogLocation   = "log.txt"
+	defaultRoom          = "main"
+	queryTimestampFormat = "2006-01-02T15:04:05.000Z"
 )
 
 var logger *log.Logger
@@ -166,16 +167,25 @@ func startHTTPServer(config configuration, done chan bool) {
 func createHTTPServer(port string) *http.Server {
 	r := mux.NewRouter()
 	r.HandleFunc("/rooms/{name}", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Add("Content-Type", "application/json")
+		variables := mux.Vars(request)
+		roomName := variables["name"]
+		if len(roomName) == 0 {
+			writer.WriteHeader(http.StatusBadRequest)
+			logger.Println("ERROR: HTTP POST request missing room name")
+			writeHttpMessage(writer, `{"statusCode":"400", "reason":"Room name cannot be blank"}`)
+			return
+		}
 		if request.Method == http.MethodGet {
 			//
 			// Query messages from a room
 			//
-			fmt.Fprintln(writer, "Hello there... this is not implemented yet...")
+			getMessages(request, writer, roomName)
 		} else {
 			//
 			// Send messages to a room
 			//
-			sendHTTPMessage(writer, request)
+			sendHTTPMessage(writer, request, roomName)
 		}
 	}).Methods(http.MethodGet, http.MethodPost)
 	srv := &http.Server{
@@ -188,16 +198,57 @@ func createHTTPServer(port string) *http.Server {
 	return srv
 }
 
-func sendHTTPMessage(writer http.ResponseWriter, request *http.Request) {
-	writer.Header().Add("Content-Type", "application/json")
-	variables := mux.Vars(request)
-	roomName := variables["name"]
-	if len(roomName) == 0 {
-		writer.WriteHeader(http.StatusBadRequest)
-		logger.Println("ERROR: HTTP POST request missing room name")
-		writeHttpMessage(writer, `{"statusCode":"400", "reason":"Room name cannot be blank"}`)
+func getMessages(request *http.Request, writer http.ResponseWriter, roomName string) {
+	query := messageQuery{
+		roomName:   roomName,
+		senderName: request.FormValue("sender"),
+	}
+	start := request.FormValue("start")
+	if len(start) != 0 {
+		startTime, err := parseTime(start)
+		if err != nil {
+			writer.WriteHeader(http.StatusBadRequest)
+			logger.Printf("ERROR: HTTP GET request start format incorrect: %+v\n", err)
+			writeHttpMessage(writer, `{"statusCode":"400", "reason":"Time format for parameter 'start' is in the incorrect format. Use format 'YYYY-MM-ddTHH:mm:ss.sssZ'"}`)
+			return
+		}
+		query.start = startTime
+	}
+	end := request.FormValue("end")
+	if len(end) != 0 {
+		endTime, err := parseTime(end)
+		if err != nil {
+			writer.WriteHeader(http.StatusBadRequest)
+			logger.Printf("ERROR: HTTP GET request end format incorrect: %+v\n", err)
+			writeHttpMessage(writer, `{"statusCode":"400", "reason":"Time format for parameter 'end' is in the incorrect format. Use format 'YYYY-MM-ddTHH:mm:ss.sssZ'"}`)
+			return
+		}
+		query.end = endTime
+	}
+	room := server.getRoom(roomName)
+	responseBytes, err := json.MarshalIndent(room.getMessages(query), "", "  ")
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		logger.Printf("ERROR: failed to marshal message response: %+v\n", err)
+		writeHttpMessage(writer, `{"statusCode":"500", "reason":"Failed to serialize response data"}`)
 		return
 	}
+	writer.WriteHeader(http.StatusOK)
+	_, err = writer.Write(responseBytes)
+	if err != nil {
+		logger.Printf("ERROR: failed to write response: %+v\n", err)
+	}
+}
+
+func parseTime(timestamp string) (time.Time, error) {
+	parsedTime, err := time.Parse(queryTimestampFormat, timestamp)
+	if err != nil {
+		return time.Time{}, errors.Wrapf(err, "failed to parse %s to time using format %s", timestamp, queryTimestampFormat)
+	}
+	return parsedTime, nil
+}
+
+func sendHTTPMessage(writer http.ResponseWriter, request *http.Request, roomName string) {
 	senderName := request.Header.Get("Sender-Name")
 	if len(senderName) == 0 {
 		writer.WriteHeader(http.StatusBadRequest)
@@ -212,9 +263,14 @@ func sendHTTPMessage(writer http.ResponseWriter, request *http.Request) {
 	room := server.getRoom(roomName)
 	body := request.Body
 	defer closeBody(body)
-	buf := make([]byte, 500)
+	var buf []byte
+	if request.ContentLength > 500 {
+		buf = make([]byte, 500)
+	} else {
+		buf = make([]byte, request.ContentLength)
+	}
 	_, err := body.Read(buf)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		writer.WriteHeader(http.StatusInternalServerError)
 		logger.Printf("ERROR: failed to handle HTTP POST request: %+v\n", err)
 		writeHttpMessage(writer, `{"statusCode":"500", "reason":"Failed to handle request"}`)

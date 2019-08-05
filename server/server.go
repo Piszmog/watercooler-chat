@@ -18,10 +18,18 @@ func (server *chatServer) createRoomIfMissing(roomName string) *chatRoom {
 	// Check if room exists - another goroutine could have created it
 	//
 	if server.rooms[roomName] == nil {
-		server.rooms[roomName] = &chatRoom{
-			name:  roomName,
-			users: make(map[string]chatUser),
+		room := &chatRoom{
+			name:           roomName,
+			userLock:       sync.RWMutex{},
+			users:          make(map[string]chatUser),
+			messageChannel: make(chan chatMessage, 100),
+			messageLock:    sync.RWMutex{},
 		}
+		server.rooms[roomName] = room
+		//
+		// Start the room's message handling
+		//
+		go room.handleMessages()
 		logger.Printf("Room %s has been created\n", roomName)
 	}
 	server.roomsLock.Unlock()
@@ -33,6 +41,7 @@ func (server *chatServer) removeRoom(roomName string) {
 	// To ensure concurrency safety, lock writes to the chatRoom map
 	//
 	server.roomsLock.Lock()
+	close(server.rooms[roomName].messageChannel)
 	delete(server.rooms, roomName)
 	server.roomsLock.Unlock()
 	logger.Printf("Room %s is empty. Room has been removed\n", roomName)
@@ -48,13 +57,14 @@ func (server *chatServer) getRoom(roomName string) *chatRoom {
 
 func (server *chatServer) listRooms() []string {
 	server.roomsLock.RLock()
+	rooms := server.rooms
+	server.roomsLock.RUnlock()
 	roomList := make([]string, len(server.rooms))
 	index := 0
-	for _, exitingRoom := range server.rooms {
+	for _, exitingRoom := range rooms {
 		roomList[index] = exitingRoom.name
 		index++
 	}
-	server.roomsLock.RUnlock()
 	return roomList
 }
 

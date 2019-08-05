@@ -21,7 +21,6 @@ const (
 		"-lb             -- to list all users currently blocked\n" +
 		"-q              -- to quit the chat\n" +
 		"-h              -- to list all available commands\n"
-	timestampFormat = "15:04 MST"
 )
 
 type chatUser struct {
@@ -181,29 +180,29 @@ func (user chatUser) handleMessages(room *chatRoom) {
 				//
 				// Send message to all other users
 				//
-				message := user.buffer.string()
+				msg := user.buffer.string()
 				//
 				// Check if message is a command
 				//
-				if strings.HasPrefix(message, "-r") { // change rooms
-					selectedRoom = user.changeRoom(selectedRoom, message)
-				} else if strings.HasPrefix(message, "-b") { // block a user
-					user.blockUser(message)
-				} else if strings.HasPrefix(message, "-u") { // unblock as user
-					user.unblockUser(message)
-				} else if message == "-lr" { // list existing rooms
+				if strings.HasPrefix(msg, "-r") { // change rooms
+					selectedRoom = user.changeRoom(selectedRoom, msg)
+				} else if strings.HasPrefix(msg, "-b") { // block a user
+					user.blockUser(msg)
+				} else if strings.HasPrefix(msg, "-u") { // unblock as user
+					user.unblockUser(msg)
+				} else if msg == "-lr" { // list existing rooms
 					user.receiveMessage(fmt.Sprintf("Existing rooms:\n%s", strings.Join(server.listRooms(), "\n")))
-				} else if message == "-lu" { // list users in the current room
+				} else if msg == "-lu" { // list users in the current room
 					user.receiveMessage(fmt.Sprintf("Users currently in the room:\n%s\n", strings.Join(selectedRoom.getUsers(), "\n")))
-				} else if message == "-lb" { // list blocked users
+				} else if msg == "-lb" { // list blocked users
 					user.receiveMessage(strings.Join(user.getBlocked(), "\n"))
-				} else if message == "-q" { // quit the server
+				} else if msg == "-q" { // quit the server
 					user.receiveMessage("Quiting...")
 					break
-				} else if message == "-h" || message == "-help" { // print commands
+				} else if msg == "-h" || msg == "-help" { // print commands
 					user.receiveMessage(messageCommands)
 				} else { // send message to other users in the room
-					user.sendMessage(message, selectedRoom)
+					user.sendMessage(msg, room)
 				}
 			} else {
 				user.buffer.writeByte(b)
@@ -215,6 +214,15 @@ func (user chatUser) handleMessages(room *chatRoom) {
 		if err != nil {
 			break
 		}
+	}
+}
+
+func (user chatUser) sendMessage(msg string, room *chatRoom) {
+	room.messageChannel <- chatMessage{
+		Timestamp: time.Now(),
+		Room:      room.name,
+		Sender:    user.name,
+		Value:     msg,
 	}
 }
 
@@ -259,25 +267,6 @@ func (user chatUser) leave(room *chatRoom) {
 	}
 }
 
-func (user chatUser) sendMessage(message string, room *chatRoom) {
-	//
-	// Format the logs with the chatRoom and chatUser
-	//
-	logger.Println(fmt.Sprintf("chat message - [%s %s] %s", room.name, user.name, message))
-	timestamp := time.Now().Format(timestampFormat)
-	for _, otherUser := range room.users {
-		if user.name == otherUser.name {
-			continue
-		} else if otherUser.isBlocked(user.name) {
-			continue
-		}
-		//
-		// Format the final message with the chatUser and timestamp
-		//
-		otherUser.receiveMessage(fmt.Sprintf("[%s %s]: %s", timestamp, user.name, message))
-	}
-}
-
 func (user *chatUser) block(userName string) {
 	user.Lock()
 	user.blockedUsers[userName] = true
@@ -292,13 +281,14 @@ func (user *chatUser) unblock(userName string) {
 
 func (user *chatUser) getBlocked() []string {
 	user.RLock()
+	users := user.blockedUsers
+	user.RUnlock()
 	var blockedUsers []string
-	for name, isBlocked := range user.blockedUsers {
+	for name, isBlocked := range users {
 		if isBlocked {
 			blockedUsers = append(blockedUsers, name)
 		}
 	}
-	user.RUnlock()
 	return blockedUsers
 }
 
