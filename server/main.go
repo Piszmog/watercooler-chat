@@ -5,6 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"github.com/gorilla/mux"
+	"github.com/piszmog/watercooler-chat/server/room"
+	"github.com/piszmog/watercooler-chat/server/server"
+	"github.com/piszmog/watercooler-chat/server/user"
 	"github.com/pkg/errors"
 	"github.com/reiver/go-telnet"
 	"io"
@@ -12,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"sync"
 	"time"
 )
 
@@ -20,17 +22,10 @@ const (
 	defaultTelnetPort    = "5555"
 	defaultHTTPPort      = "8080"
 	defaultLogLocation   = "log.txt"
-	defaultRoom          = "main"
 	queryTimestampFormat = "2006-01-02T15:04:05.000Z"
 )
 
 var logger *log.Logger
-var server = chatServer{
-	rooms:     make(map[string]*chatRoom),
-	roomsLock: sync.RWMutex{},
-	users:     make(map[string]chatUser),
-	usersLock: sync.RWMutex{},
-}
 
 type configuration struct {
 	IPAddress   string `json:"ipAddress"`
@@ -43,7 +38,7 @@ func main() {
 	//
 	// Setup flags
 	//
-	configPath := flag.String("c", "", "Configuration file used to configure the server")
+	configPath := flag.String("c", "", "Configuration file used to configure the s")
 	flag.Parse()
 	//
 	// Determine if using defaults
@@ -77,18 +72,19 @@ func main() {
 	//
 	// Setup chat server
 	//
-	server.createRoomIfMissing(defaultRoom)
+	s := server.CreateServer()
+	s.CreateRoomIfMissing(server.DefaultRoom)
 	done := make(chan bool)
 	//
 	// Start the TELNET server
 	//
-	go startTelnetServer(config, done)
+	go startTelnetServer(&s, config, done)
 	//
 	// Start the HTTP server
 	//
-	go startHTTPServer(config, done)
+	go startHTTPServer(&s, config, done)
 	<-done
-	logger.Println("Stopping server...")
+	logger.Println("Stopping s...")
 }
 
 func readConfigurationFile(configPath string) (configuration, error) {
@@ -132,39 +128,39 @@ func closeFile(file *os.File) {
 	}
 }
 
-func startTelnetServer(config configuration, done chan bool) {
-	var userHandler = chatUser{}
+func startTelnetServer(s *server.ChatServer, config configuration, done chan bool) {
+	var userHandler = user.ChatUser{Server: s}
 	port := config.TelnetPort
 	if len(port) == 0 {
 		logger.Printf("No Telnet port provided in the configuration file. Using default Telnet port '%s'\n", defaultTelnetPort)
 		port = defaultTelnetPort
 	}
-	logger.Printf("Starting Telnet server on port '%s'...\n", port)
+	logger.Printf("Starting Telnet s on port '%s'...\n", port)
 	err := telnet.ListenAndServe(":"+port, userHandler)
 	if nil != err {
 		//
 		// Fatal will not execute defers, so to ensure we close the log file
 		//
-		logger.Printf("failed to start Telnet server at address %s: %+v\n", config.TelnetPort, err)
+		logger.Printf("failed to start Telnet s at address %s: %+v\n", config.TelnetPort, err)
 	}
 	done <- true
 }
 
-func startHTTPServer(config configuration, done chan bool) {
+func startHTTPServer(s *server.ChatServer, config configuration, done chan bool) {
 	port := config.TelnetPort
 	if len(port) == 0 {
 		logger.Printf("No HTTP port provided in the configuration file. Using default HTTP port '%s'\n", defaultHTTPPort)
 		port = defaultHTTPPort
 	}
-	logger.Printf("Starting HTTP server on port '%s'...\n", port)
-	srv := createHTTPServer(port)
+	logger.Printf("Starting HTTP s on port '%s'...\n", port)
+	srv := createHTTPServer(port, s)
 	if err := srv.ListenAndServe(); err != nil {
-		logger.Printf("failed to start HTTP server at addredd %s: %+v\n", port, err)
+		logger.Printf("failed to start HTTP s at addredd %s: %+v\n", port, err)
 	}
 	done <- true
 }
 
-func createHTTPServer(port string) *http.Server {
+func createHTTPServer(port string, s *server.ChatServer) *http.Server {
 	r := mux.NewRouter()
 	r.HandleFunc("/rooms/{name}", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Add("Content-Type", "application/json")
@@ -180,12 +176,12 @@ func createHTTPServer(port string) *http.Server {
 			//
 			// Query messages from a room
 			//
-			getMessages(request, writer, roomName)
+			getMessages(s, request, writer, roomName)
 		} else {
 			//
 			// Send messages to a room
 			//
-			sendHTTPMessage(writer, request, roomName)
+			sendHTTPMessage(s, writer, request, roomName)
 		}
 	}).Methods(http.MethodGet, http.MethodPost)
 	srv := &http.Server{
@@ -198,10 +194,10 @@ func createHTTPServer(port string) *http.Server {
 	return srv
 }
 
-func getMessages(request *http.Request, writer http.ResponseWriter, roomName string) {
-	query := messageQuery{
-		roomName:   roomName,
-		senderName: request.FormValue("sender"),
+func getMessages(s *server.ChatServer, request *http.Request, writer http.ResponseWriter, roomName string) {
+	query := room.MessageQuery{
+		RoomName:   roomName,
+		SenderName: request.FormValue("sender"),
 	}
 	start := request.FormValue("start")
 	if len(start) != 0 {
@@ -212,7 +208,7 @@ func getMessages(request *http.Request, writer http.ResponseWriter, roomName str
 			writeHttpMessage(writer, `{"statusCode":"400", "reason":"Time format for parameter 'start' is in the incorrect format. Use format 'YYYY-MM-ddTHH:mm:ss.sssZ'"}`)
 			return
 		}
-		query.start = startTime
+		query.Start = startTime
 	}
 	end := request.FormValue("end")
 	if len(end) != 0 {
@@ -223,10 +219,10 @@ func getMessages(request *http.Request, writer http.ResponseWriter, roomName str
 			writeHttpMessage(writer, `{"statusCode":"400", "reason":"Time format for parameter 'end' is in the incorrect format. Use format 'YYYY-MM-ddTHH:mm:ss.sssZ'"}`)
 			return
 		}
-		query.end = endTime
+		query.End = endTime
 	}
-	room := server.getRoom(roomName)
-	responseBytes, err := json.MarshalIndent(room.getMessages(query), "", "  ")
+	r := s.GetRoom(roomName)
+	responseBytes, err := json.MarshalIndent(r.GetMessages(query), "", "  ")
 	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
 		logger.Printf("ERROR: failed to marshal message response: %+v\n", err)
@@ -248,7 +244,7 @@ func parseTime(timestamp string) (time.Time, error) {
 	return parsedTime, nil
 }
 
-func sendHTTPMessage(writer http.ResponseWriter, request *http.Request, roomName string) {
+func sendHTTPMessage(s *server.ChatServer, writer http.ResponseWriter, request *http.Request, roomName string) {
 	senderName := request.Header.Get("Sender-Name")
 	if len(senderName) == 0 {
 		writer.WriteHeader(http.StatusBadRequest)
@@ -257,10 +253,10 @@ func sendHTTPMessage(writer http.ResponseWriter, request *http.Request, roomName
 		return
 	}
 	logger.Println("Received HTTP request to send a message from user " + senderName)
-	user := chatUser{
-		name: senderName,
+	u := user.ChatUser{
+		Name: senderName,
 	}
-	room := server.getRoom(roomName)
+	r := s.GetRoom(roomName)
 	body := request.Body
 	defer closeBody(body)
 	var buf []byte
@@ -276,7 +272,7 @@ func sendHTTPMessage(writer http.ResponseWriter, request *http.Request, roomName
 		writeHttpMessage(writer, `{"statusCode":"500", "reason":"Failed to handle request"}`)
 		return
 	}
-	user.sendMessage(string(buf), room)
+	u.SendMessage(string(buf), r)
 	if request.ContentLength > 500 {
 		writer.WriteHeader(http.StatusOK)
 		logger.Println("WARN: HTTP POST request body greater than 500 bytes. Truncating message")
