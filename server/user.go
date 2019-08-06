@@ -97,7 +97,7 @@ func (user ChatUser) ServeTELNET(ctx telnet.Context, writer telnet.Writer, reade
 	// handle when a user leaves the server
 	//
 	user.leave(room)
-	server.RemoveUser(user)
+	server.RemoveUser(user.Name)
 }
 
 func (user *ChatUser) selectName() {

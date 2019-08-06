@@ -17,6 +17,6 @@ func TestBuffer_String(t *testing.T) {
 	buffer.WriteByte('o')
 	message := buffer.String()
 	if message != "hello" {
-		t.Fatalf("Buffer message does not match expected value. Actual Value %s", message)
+		t.Fatalf("buffer message does not match expected value. Actual Value %s", message)
 	}
 }

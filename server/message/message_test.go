@@ -14,7 +14,7 @@ func TestChatMessage_LogMessage(t *testing.T) {
 	}
 	logMessage := chatMessage.LogMessage()
 	if logMessage != "chat message - [test tester] Hello from tester!" {
-		t.Fatalf("Log message not match expected value. Actual value: %s", logMessage)
+		t.Fatalf("log message not match expected value. Actual value: %s", logMessage)
 	}
 }
 
@@ -27,6 +27,6 @@ func TestChatMessage_RoomMessage(t *testing.T) {
 	}
 	logMessage := chatMessage.RoomMessage()
 	if logMessage != "[01:01 UTC tester]: Hello from tester!" {
-		t.Fatalf("Log message not match expected value. Actual value: %s", logMessage)
+		t.Fatalf("log message not match expected value. Actual value: %s", logMessage)
 	}
 }

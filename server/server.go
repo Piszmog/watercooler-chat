@@ -104,14 +104,14 @@ func (server ChatServer) GetUser(userName string) *ChatUser {
 }
 
 // RemoveUser removes the user.
-func (server *ChatServer) RemoveUser(user ChatUser) {
+func (server *ChatServer) RemoveUser(userName string) {
 	//
 	// Ensure concurrency safety
 	//
 	server.usersLock.Lock()
-	delete(server.users, user.Name)
+	delete(server.users, userName)
 	server.usersLock.Unlock()
-	logger.Printf("%s has left the server\n", user.Name)
+	logger.Printf("%s has left the server\n", userName)
 }
 
 // UserExists checks if the user exists in the server.
