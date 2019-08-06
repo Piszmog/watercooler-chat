@@ -14,7 +14,7 @@ func StartTelnetServer(config configuration, done chan bool) {
 		logger.Printf("No Telnet port provided in the configuration file. Using default Telnet port '%s'\n", defaultTelnetPort)
 		port = defaultTelnetPort
 	}
-	logger.Printf("Starting Telnet s on port '%s'...\n", port)
+	logger.Printf("Starting Telnet server on port '%s'...\n", port)
 	//
 	// Start server
 	//
@@ -23,7 +23,7 @@ func StartTelnetServer(config configuration, done chan bool) {
 		//
 		// Fatal will not execute defers, so to ensure we close the log file
 		//
-		logger.Printf("failed to start Telnet s at address %s: %+v\n", config.TelnetPort, err)
+		logger.Printf("failed to start Telnet server at address %s: %+v\n", config.TelnetPort, err)
 	}
 	done <- true
 }

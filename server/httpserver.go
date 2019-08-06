@@ -30,7 +30,7 @@ func StartHTTPServer(config configuration, done chan bool) {
 		logger.Printf("No HTTP port provided in the configuration file. Using default HTTP port '%s'\n", defaultHTTPPort)
 		port = defaultHTTPPort
 	}
-	logger.Printf("Starting HTTP s on port '%s'...\n", port)
+	logger.Printf("Starting HTTP server on port '%s'...\n", port)
 	//
 	// Create and start server
 	//

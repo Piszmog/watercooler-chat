@@ -75,7 +75,7 @@ func main() {
 	//
 	go StartHTTPServer(config, done)
 	<-done
-	logger.Println("Stopping s...")
+	logger.Println("Stopping server...")
 }
 
 func readConfigurationFile(configPath string) (configuration, error) {
