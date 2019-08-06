@@ -53,7 +53,9 @@ func (server *ChatServer) RemoveRoom(roomName string) {
 	// To ensure concurrency safety, lock writes to the chatRoom map
 	//
 	server.roomsLock.Lock()
-	server.rooms[roomName].Close()
+	if server.rooms[roomName] != nil {
+		server.rooms[roomName].Close()
+	}
 	delete(server.rooms, roomName)
 	server.roomsLock.Unlock()
 	logger.Printf("Room %s is empty. Room has been removed\n", roomName)
