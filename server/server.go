@@ -1,30 +1,32 @@
-package server
+package main
 
 import (
-	"github.com/piszmog/watercooler-chat/server/room"
-	"github.com/piszmog/watercooler-chat/server/user"
 	"sync"
 )
 
-const DefaultRoom = "main"
+const defaultRoom = "main"
 
+// ChatServer is the server that is keeping rooms and users in-sync.
 type ChatServer struct {
-	rooms     map[string]*room.ChatRoom
+	rooms     map[string]*ChatRoom
 	roomsLock sync.RWMutex
-	users     map[string]user.ChatUser
+	users     map[string]*ChatUser
 	usersLock sync.RWMutex
 }
 
+// CreateServer creates the server.
 func CreateServer() ChatServer {
 	return ChatServer{
-		rooms:     make(map[string]*room.ChatRoom),
+		rooms:     make(map[string]*ChatRoom),
 		roomsLock: sync.RWMutex{},
-		users:     make(map[string]user.ChatUser),
+		users:     make(map[string]*ChatUser),
 		usersLock: sync.RWMutex{},
 	}
 }
 
-func (server *ChatServer) CreateRoomIfMissing(roomName string) *room.ChatRoom {
+// CreateRoomIfMissing creates the room with the specified name if it does not exist. If the room exists, the room matching
+// the name is returned.
+func (server *ChatServer) CreateRoomIfMissing(roomName string) *ChatRoom {
 	//
 	// To ensure concurrency safety, use lock
 	//
@@ -33,18 +35,19 @@ func (server *ChatServer) CreateRoomIfMissing(roomName string) *room.ChatRoom {
 	// Check if room exists - another goroutine could have created it
 	//
 	if server.rooms[roomName] == nil {
-		r := room.CreateRoom(roomName)
+		r := CreateRoom(roomName)
 		server.rooms[roomName] = &r
 		//
 		// Start the room's message handling
 		//
 		go r.HandleMessages()
-		//main.logger.Printf("Room %s has been created\n", roomName)
+		logger.Printf("Room %s has been created\n", roomName)
 	}
 	server.roomsLock.Unlock()
 	return server.rooms[roomName]
 }
 
+// RemoveRoom removes the room from the server.
 func (server *ChatServer) RemoveRoom(roomName string) {
 	//
 	// To ensure concurrency safety, lock writes to the chatRoom map
@@ -53,10 +56,11 @@ func (server *ChatServer) RemoveRoom(roomName string) {
 	server.rooms[roomName].Close()
 	delete(server.rooms, roomName)
 	server.roomsLock.Unlock()
-	//main.logger.Printf("Room %s is empty. Room has been removed\n", roomName)
+	logger.Printf("Room %s is empty. Room has been removed\n", roomName)
 }
 
-func (server *ChatServer) GetRoom(roomName string) *room.ChatRoom {
+// GetRoom retrieves the room matching the specified room name.
+func (server *ChatServer) GetRoom(roomName string) *ChatRoom {
 	server.roomsLock.RLock()
 	selectedRoom := server.rooms[roomName]
 	server.roomsLock.RUnlock()
@@ -64,6 +68,7 @@ func (server *ChatServer) GetRoom(roomName string) *room.ChatRoom {
 	return selectedRoom
 }
 
+// ListRooms returns a list of all room names in the server.
 func (server *ChatServer) ListRooms() []string {
 	server.roomsLock.RLock()
 	rooms := server.rooms
@@ -77,7 +82,8 @@ func (server *ChatServer) ListRooms() []string {
 	return roomList
 }
 
-func (server *ChatServer) AddUser(user user.ChatUser) {
+// AddUser adds the user to the server.
+func (server *ChatServer) AddUser(user *ChatUser) {
 	//
 	// Ensure concurrency safety
 	//
@@ -86,7 +92,8 @@ func (server *ChatServer) AddUser(user user.ChatUser) {
 	server.usersLock.Unlock()
 }
 
-func (server *ChatServer) getUser(userName string) user.ChatUser {
+// GetUser retrieves the user matching the specified user name.
+func (server ChatServer) GetUser(userName string) *ChatUser {
 	//
 	// Ensure concurrency safety
 	//
@@ -96,23 +103,25 @@ func (server *ChatServer) getUser(userName string) user.ChatUser {
 	return u
 }
 
-func (server *ChatServer) RemoveUser(user user.ChatUser) {
+// RemoveUser removes the user.
+func (server *ChatServer) RemoveUser(user ChatUser) {
 	//
 	// Ensure concurrency safety
 	//
 	server.usersLock.Lock()
 	delete(server.users, user.Name)
 	server.usersLock.Unlock()
-	//main.logger.Printf("%s has left the server\n", user.Name)
+	logger.Printf("%s has left the server\n", user.Name)
 }
 
+// UserExists checks if the user exists in the server.
 func (server *ChatServer) UserExists(userName string) bool {
 	exists := false
 	//
 	// Ensure concurrency safety
 	//
 	server.usersLock.RLock()
-	if len(server.users[userName].Name) != 0 {
+	if server.users[userName] != nil {
 		exists = true
 	}
 	server.usersLock.RUnlock()
