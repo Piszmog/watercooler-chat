@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"github.com/piszmog/watercooler-chat/server/message"
+	"github.com/piszmog/watercooler-chat/message"
 	"log"
 	"os"
 	"sync"

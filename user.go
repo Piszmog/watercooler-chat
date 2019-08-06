@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/piszmog/watercooler-chat/server/message"
+	"github.com/piszmog/watercooler-chat/message"
 	"github.com/reiver/go-oi"
 	"github.com/reiver/go-telnet"
 	"runtime/debug"

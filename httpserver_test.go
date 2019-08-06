@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"github.com/gorilla/mux"
-	"github.com/piszmog/watercooler-chat/server/message"
+	"github.com/piszmog/watercooler-chat/message"
 	"log"
 	"net/http"
 	"net/http/httptest"

@@ -1,7 +1,5 @@
 github.com/gorilla/mux v1.7.3 h1:gnP5JzjVOuiZD07fKKToCAOjS0yOpj/qPETTXCCS6hw=
 github.com/gorilla/mux v1.7.3/go.mod h1:1lud6UwP+6orDFRuTfBEV8e9/aOM/c4fVVCaMa2zaAs=
-github.com/piszmog/watercooler-chat/server v0.0.0-20190806015948-75832c8229ca h1:NutoB7rvrp53itUoUDi/NNMxaqoY6XYfHmKvuR0NVoQ=
-github.com/piszmog/watercooler-chat/server v0.0.0-20190806015948-75832c8229ca/go.mod h1:MbokLEwR87X7I1nTD2sWDhvf+IWz8k7laMifPrgCh5s=
 github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/reiver/go-oi v1.0.0 h1:nvECWD7LF+vOs8leNGV/ww+F2iZKf3EYjYZ527turzM=

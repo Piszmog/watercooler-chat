@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"github.com/gorilla/mux"
-	"github.com/piszmog/watercooler-chat/server/message"
+	"github.com/piszmog/watercooler-chat/message"
 	"github.com/pkg/errors"
 	"io"
 	"net/http"
