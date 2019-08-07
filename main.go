@@ -32,7 +32,8 @@ func main() {
 	//
 	// Setup flags
 	//
-	configPath := flag.String("c", "", "Configuration file used to configure the s")
+	configPath := flag.String("c", "", "Configuration file used to configure the server")
+	debugMode := flag.Bool("d", false, "Enables debug mode - logs are also written to the console")
 	flag.Parse()
 	//
 	// Determine if using defaults
@@ -59,10 +60,14 @@ func main() {
 	}
 	defer closeFile(logFile)
 	//
-	// write to file and console -- TODO turn off console
+	// write to file and/or console if debug mode is enabled
 	//
-	multiWriter := io.MultiWriter(os.Stdout, logFile)
-	logger = log.New(multiWriter, "", log.LstdFlags|log.LUTC)
+	if *debugMode {
+		multiWriter := io.MultiWriter(os.Stdout, logFile)
+		logger = log.New(multiWriter, "", log.LstdFlags|log.LUTC)
+	} else {
+		logger = log.New(logFile, "", log.LstdFlags|log.LUTC)
+	}
 	//
 	// Setup chat server
 	//
