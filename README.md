@@ -7,7 +7,12 @@
 
 Application for a simple chat server to allow for remote teammates to have their 'watercooler moments'.
 
+## Starting Server
+The chat server can be started by running `./watercooler-chat` (or `watercooler-chat.exe` on Windows). A configuration file 
+can be provided using the `-c` flag. If a configuration file is not provided, defaults are used.
+
 ## Server Configuration
+The chat server can be configured with the following JSON file. 
 
 ```json
 {
@@ -29,10 +34,10 @@ Application for a simple chat server to allow for remote teammates to have their
 ```
 
 ### TELNETS (Secure TELNET)
+TODO
 
 #### Client Configuration
-
-## Starting Server
+TODO
 
 ## TELNET Commands
 
@@ -121,6 +126,12 @@ cache-control: no-cache
   }
 ]
 ```
+
+## Limitations
+* TODO
+
+## Known Bugs
+* TODO
 
 ## Dependencies
 Dependencies used in this project can be found in the `go.mod` file.
