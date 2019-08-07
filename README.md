@@ -40,6 +40,20 @@ TODO
 TODO
 
 ## TELNET Commands
+After connecting to the server via TELNET, the client will be asked to enter a user name and a room to enter. After connecting 
+with and choosing user name/room, a number of commands are available to allow a range of functionality. 
+
+### Commands
+```text
+-r ${room Name} -- change to the specified room. Creates room if doesn't exist
+-b ${user Name} -- to block messages from the specified user
+-u ${user Name} -- to Unblock messages from the specified user
+-lr             -- to list all existing rooms
+-lu             -- to list all users in the current room
+-lb             -- to list all users currently blocked
+-q              -- to quit the chat
+-h              -- to list all available commands
+```
 
 ## HTTP Endpoints
 There are two available endpoints to call on the server. There is a `GET` endpoint to query for messages from a room, and 
