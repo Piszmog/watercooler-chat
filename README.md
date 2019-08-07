@@ -34,10 +34,34 @@ The chat server can be configured with the following JSON file.
 ```
 
 ### TELNETS (Secure TELNET)
-TODO
+TELNETS (Secure TELNET) can be ran by providing a `certificateFile` and a `keyFile` in the configuration file. If not provided, 
+TENET (unsecured) will be started.
 
 #### Client Configuration
-TODO
+In addition to the configuration above, the following also configures TLS for TELNET.
+
+```json
+{
+  "ipAddress": "${the IP Address to run the server on - defaults to localhost}",
+  "telnetPort": "${the port to run the TELNET server on - defaults to 5555}",
+  "httpPort": "${the port to run the HTTP server on - defaults to 8080}",
+  "logFileLocation": "${the location the log file is written to - defaults to {workingDirectory}/log.txt}",
+  "certificateFile": "${the location of the certificate file}",
+  "keyFile": "${the location of the key file}"
+}
+```
+
+###### Example
+```json
+{
+  "ipAddress": "localhost",
+  "telnetPort": "5555",
+  "httpPort": "8080",
+  "logFileLocation": "log.txt",
+  "certificateFile": "cert.pem",
+  "keyFile": "key.pem"
+}
+```
 
 ## TELNET Commands
 After connecting to the server via TELNET, the client will be asked to enter a user name and a room to enter. After connecting 
@@ -142,14 +166,26 @@ cache-control: no-cache
 ```
 
 ## Limitations
-* TODO
+* The HTTP server is not configurable to be HTTPS
+* If the server is cycled (stopped/started), all messages, users, and rooms will be lost
+  * Writing to a file or DB can help remedy this
+* Multi-line message cannot be sent
+* It is not quite clear when a user can begin typing messages
+* HTTP messages are capped at 500 characters, but messages via TELNET are not capped
+* Benchmarks have not been ran to determine the impact of the usages of `sync.RWMutex`
 
 ## Known Bugs
-* TODO
+* If a chosen user name is not registered in the server, multiple users are able to pick the same name if the users choose the 
+name at the same time. There are locks in place to allow concurrent updates to the users, but there is no final validation at this 
+step. This can be remedied by returning the user when registered or a boolean.
+* There is no scrubbing of messages being written to the log file. It is vulnerable to [Log Forging/Injection](https://www.owasp.org/index.php/Log_Injection)
+* Log file is not being rotated, so if the server runs for too long, the log file can get very large and use all the space 
+on a machine.
 
 ## Dependencies
-Dependencies used in this project can be found in the `go.mod` file.
+Dependencies are managed with __Modules__. Dependencies used in this project can be found in the `go.mod` file.
 
+#### Links
 * [Errors](https://github.com/pkg/errors)
 * [Go-Telnet](https://github.com/reiver/go-telnet)
 * [Gorilla Mux](https://github.com/gorilla/mux) 

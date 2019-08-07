@@ -2,5 +2,7 @@
   "ipAddress": "localhost",
   "telnetPort": "5555",
   "httpPort": "8080",
-  "logFileLocation": "log.txt"
+  "logFileLocation": "log.txt",
+  "certificateFile": "cert.pem",
+  "keyFile": "key.pem"
 }
