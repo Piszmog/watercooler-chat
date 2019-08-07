@@ -7,9 +7,36 @@
 
 Application for a simple chat server to allow for remote teammates to have their 'watercooler moments'.
 
+##### Approach
+Initially creating the Watercooler Chat required understanding how to create a TELNET server. Luckily a library called 
+[Go-Telnet](https://github.com/reiver/go-telnet) exists to help make it easy to create a server. Following the library's 
+example apps, a client that would echo commands entered by a user was created.
+
+The next objective was to have two clients be able to write messages back and forth. This required each client having some 
+form of access to the other client's `telnet.Writer` attribute. This meant that clients needed the ability to look each other 
+up from a registry/cache and the `telnet.Writer` needed to be associated with the connected client. Once this was complete, users 
+could send messages to each other by writing messages to each other's `telnet.Writer`.
+
+After clients could send message back and forth with a formatted message of who sent the message and when the message was sent,
+rooms were created to allow users to be separated. Much like users, this required a registry/cache to save and lookup rooms.
+
+With a registry of users and rooms, this could be encapsulated into a 'server' that would house all registered users and rooms.
+
+##### Process
+1. When the server starts, a `ChatServer` is created with a default room called `main`
+2. When a user connects over TELNET, the user selects a user name
+3. The user is registered with the specified username
+4. The user then selects a room to join
+5. If a room that does not exist is select, the room is created
+6. The user is registered with the room
+7. When a user sends a message, the room looks up all the users registered to the room/server and sends the message to those users
+
 ## Starting Server
 The chat server can be started by running `./watercooler-chat` (or `watercooler-chat.exe` on Windows). A configuration file 
 can be provided using the `-c` flag. If a configuration file is not provided, defaults are used.
+
+Sometimes logging to the console is required for debugging, passing the flag `-d` enables writing to the log file and to 
+the console.
 
 ## Server Configuration
 The chat server can be configured with the following JSON file. 
@@ -173,6 +200,7 @@ cache-control: no-cache
 * It is not quite clear when a user can begin typing messages
 * HTTP messages are capped at 500 characters, but messages via TELNET are not capped
 * Benchmarks have not been ran to determine the impact of the usages of `sync.RWMutex`
+* There is very tight coupling between the server, rooms, and users. It is hard to break apart without a major refactor.
 
 ## Known Bugs
 * If a chosen user name is not registered in the server, multiple users are able to pick the same name if the users choose the 
