@@ -14,11 +14,22 @@ func StartTelnetServer(config configuration, done chan bool) {
 		logger.Printf("No Telnet port provided in the configuration file. Using default Telnet port '%s'\n", defaultTelnetPort)
 		port = defaultTelnetPort
 	}
-	logger.Printf("Starting Telnet server on port '%s'...\n", port)
+	ipAddress := config.IPAddress
+	if len(ipAddress) == 0 {
+		logger.Printf("No IP Address provided in the configuration file. Using default IP Address '%s'\n", defaultIPAddress)
+		ipAddress = defaultIPAddress
+	}
+	logger.Printf("Starting Telnet server on '%s'...\n", ipAddress+":"+port)
 	//
 	// Start server
 	//
-	err := telnet.ListenAndServe(":"+port, userHandler)
+	var err error
+	if len(config.CertificateFile) != 0 && len(config.KeyFile) != 0 {
+		err = telnet.ListenAndServeTLS(ipAddress+":"+port, config.CertificateFile, config.KeyFile, userHandler)
+	} else {
+		logger.Println("A certificate and key file were not provided. Telnet server will start in unsecured mode.")
+		err = telnet.ListenAndServe(ipAddress+":"+port, userHandler)
+	}
 	if nil != err {
 		//
 		// Fatal will not execute defers, so to ensure we close the log file

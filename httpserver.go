@@ -30,25 +30,30 @@ func StartHTTPServer(config configuration, done chan bool) {
 		logger.Printf("No HTTP port provided in the configuration file. Using default HTTP port '%s'\n", defaultHTTPPort)
 		port = defaultHTTPPort
 	}
-	logger.Printf("Starting HTTP server on port '%s'...\n", port)
+	ipAddress := config.IPAddress
+	if len(ipAddress) == 0 {
+		logger.Printf("No IP Address provided in the configuration file. Using default IP Address '%s'\n", defaultIPAddress)
+		ipAddress = defaultIPAddress
+	}
+	logger.Printf("Starting HTTP server on '%s'...\n", ipAddress+":"+port)
 	//
 	// Create and start server
 	//
-	srv := createHTTPServer(port)
+	srv := createHTTPServer(ipAddress, port)
 	if err := srv.ListenAndServe(); err != nil {
-		logger.Printf("failed to start HTTP s at addredd %s: %+v\n", port, err)
+		logger.Printf("failed to start HTTP server at address %s: %+v\n", ipAddress+":"+port, err)
 	}
 	done <- true
 }
 
-func createHTTPServer(port string) *http.Server {
+func createHTTPServer(ipAddress, port string) *http.Server {
 	r := mux.NewRouter()
 	//
 	// Setup route the the GET and POST for messages to/from a room
 	//
 	r.HandleFunc(pathRoom, RoomRequestHandler).Methods(http.MethodGet, http.MethodPost)
 	srv := &http.Server{
-		Addr:         "0.0.0.0:" + port,
+		Addr:         ipAddress + ":" + port,
 		WriteTimeout: time.Second * 15,
 		ReadTimeout:  time.Second * 15,
 		IdleTimeout:  time.Second * 60,

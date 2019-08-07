@@ -13,16 +13,19 @@ import (
 
 const (
 	defaultLogLocation = "log.txt"
+	defaultIPAddress   = "localhost"
 )
 
 var logger *log.Logger
 var server ChatServer
 
 type configuration struct {
-	IPAddress   string `json:"ipAddress"`
-	TelnetPort  string `json:"telnetPort"`
-	HTTPPort    string `json:"httpPort"`
-	LogLocation string `json:"logFileLocation"`
+	IPAddress       string `json:"ipAddress"`
+	TelnetPort      string `json:"telnetPort"`
+	HTTPPort        string `json:"httpPort"`
+	LogLocation     string `json:"logFileLocation"`
+	CertificateFile string `json:"certificateFile"`
+	KeyFile         string `json:"keyFile"`
 }
 
 func main() {
